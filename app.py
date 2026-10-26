@@ -60,7 +60,52 @@ def lister_notes():
             for r in rows
         ]
     )
+# Modification d'une note par l'enseignant
+@app.route("/notes/<note_id>", methods=["PUT"])
+def modifier_note(note_id):
+    import auth
 
+    utilisateur = auth.utilisateur_connecte()
+
+    if utilisateur is None:
+        return jsonify({"erreur": "Authentification requise"}), 401
+
+    if utilisateur.get("role") != "enseignant":
+        return jsonify({"erreur": "Accès interdit"}), 403
+
+    donnees = request.get_json(silent=True) or {}
+    nouvelle_note = donnees.get("note")
+
+    if (
+        isinstance(nouvelle_note, bool)
+        or not isinstance(nouvelle_note, (int, float))
+        or not 0 <= nouvelle_note <= 20
+    ):
+        return jsonify({"erreur": "Note invalide"}), 400
+
+    try:
+        with sqlite3.connect(DB) as con:
+            resultat = con.execute(
+                "SELECT module FROM notes WHERE id = ?",
+                (note_id,)
+            ).fetchone()
+
+            if resultat is None:
+                return jsonify({"erreur": "Note introuvable"}), 404
+
+            if resultat[0] != utilisateur.get("module"):
+                return jsonify({"erreur": "Accès interdit"}), 403
+
+            con.execute(
+                "UPDATE notes SET note = ? WHERE id = ?",
+                (nouvelle_note, note_id)
+            )
+
+        return jsonify({"message": "Note modifiée"}), 200
+
+    except sqlite3.Error:
+        app.logger.exception("Erreur lors de la modification")
+        return jsonify({"erreur": "Erreur interne du serveur"}), 500
 
 if __name__ == "__main__":
     app.run(host=os.environ.get("APP_HOST", "127.0.0.1"), port=5000)
